@@ -1,0 +1,17 @@
+{
+  "name": "mcp",
+  "version": "1.0.0",
+  "description": "GitHub MCP server for Auto_drives project",
+  "main": "start-mcp.js",
+  "scripts": {
+    "start": "node start-mcp.js",
+    "path": "node get-path.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["mcp", "github", "auto_drives"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/server-github": "^1.0.0"
+  }
+}
