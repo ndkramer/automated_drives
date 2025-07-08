@@ -1,0 +1,41 @@
+[
+  {
+    "input": "--- Page 1 ---\nPURCHASE ORDER\nABC Supply Company\n123 Business St, City, State 12345\nPO Number: PO-2024-5678 Date: 2024-01-15\nVendor: XYZ Manufacturing Ltd\nDelivery Date: 2024-02-15\nITEM DETAILS:\nDescription: Industrial Widgets\nQuantity: 25 units\nUnit Price: $45.99\nTotal Amount: $1,149.75\nPayment Terms: Net 30 days\nContact: orders@abcsupply.com\nPhone: (555) 987-6543",
+    "expected_output": {
+      "po_number": "PO-2024-5678",
+      "vendor_name": "XYZ Manufacturing Ltd",
+      "total_amount": 1149.75,
+      "delivery_date": "2024-02-15",
+      "quantity": 25.0,
+      "unit_price": 45.99,
+      "payment_terms": "Net 30 days"
+    },
+    "source_file": "20250707_161425_realistic_po_document.pdf"
+  },
+  {
+    "input": "--- Page 1 ---\nOrder Confirmation\nFebruary 17, 2025\nBenshaw, Inc.\nAttn: AP\n615 Alpha Drive\nPittsburgh, PA, US\n15238\nPh: 412-756-2260\nSold To Bill To Ship To Order Notes:\nCUSTOMER NO:4000418 AUTOMATED DRIVE SYSTEMS, LLC AUTOMATED DRIVE SYSTEMS,\nAUTOMATED DRIVE SYSTEMS, LLC 6101 S 118TH STREET LLC\n6101 S 118TH STREET OMAHA, NE, US 6101 S 118TH STREET\nOMAHA, NE, US 68137 OMAHA, NE, US\n68137 68137\nOrder Date Order No Customer P.O. # Benshaw Sales Rep Quote Number\n02/14/2025 S2501065 20319 B. ENGELMAN - A000\nShip-Via Ship-Via Acct Delivery Terms Del Terms Location Payment Terms1\nBestway Prepay and Add FCA Shipping Point NET 30 DAYS\nLine Del Qty Requested Committed 2;3\nShip/Release Ship/Release\nItem No\nNo No Ord Ship Item Description Date Date Price Each Price Total\n1 1 1.00 0.00 2028155 CH-440145-00 02/17/2025 02/17/2025 5,452.50 5,452.50\nRB2-1-S-590A18C STD FLT 42KA\nSUBTOTAL $5,452.50\nDelivery Contact:\nTax Rt/Tot Taxes 0.000% $0.00\nShipment Markings:\nSpecial Shipping Instructions:\n$5,452.50\n(US Dollar)\nNotes:\n1. Orders over $100K are subject to special billing terms.\n2. Committed ship dates are subject to change due to material availability and/or delays with order approvals. Page 1 of 1\n3. All orders are assumed to allow partial and/or early shipment unless otherwise noted on the purchase order.\n\n--- Page 2 ---\nTerms & Conditions of Sale\n1. General\n(a) This document constitutes an offer by Noble Ultimate Holding, LLC, dba Unico Technologies Group, its affiliates, and/or subsidiaries (\u201cUTG\u201d) to\nprovide the products and/or services described herein (the \u201cProducts\u201d) and to license software loaded on, or provided with, the Products (the\n\u201cSoftware\u201d) to the buyer to which this offer is addressed (\u201cBuyer\u201d), subject to the terms, covenants, and conditions contained herein. Buyer may not\nmodify, change, renounce, or waive any term, covenant, or condition hereof or any of UTG\u2019s rights or remedies hereunder unless UTG\nconsents thereto in writing. UTG agrees to provide the Product",
+    "expected_output": {
+      "po_number": "20319",
+      "vendor_name": "Benshaw, Inc.",
+      "total_amount": 5452.5,
+      "delivery_date": "2025-02-17",
+      "quantity": 1.0,
+      "unit_price": 5452.5,
+      "payment_terms": "NET 30 DAYS"
+    },
+    "source_file": "20250707_161801_Benshaw_PO_20319_S2501065_ACK.pdf"
+  },
+  {
+    "input": "--- Page 1 ---\nPURCHASE ORDER\nABC Supply Company\n123 Business St, City, State 12345\nPO Number: PO-2024-5678 Date: 2024-01-15\nVendor: XYZ Manufacturing Ltd\nDelivery Date: 2024-02-15\nITEM DETAILS:\nDescription: Industrial Widgets\nQuantity: 25 units\nUnit Price: $45.99\nTotal Amount: $1,149.75\nPayment Terms: Net 30 days\nContact: orders@abcsupply.com\nPhone: (555) 987-6543",
+    "expected_output": {
+      "po_number": "PO-2024-5678",
+      "vendor_name": "XYZ Manufacturing Ltd",
+      "total_amount": 1149.75,
+      "delivery_date": "2024-02-15",
+      "quantity": 25.0,
+      "unit_price": 45.99,
+      "payment_terms": "Net 30 days"
+    },
+    "source_file": "20250707_162133_realistic_po_document.pdf"
+  }
+]

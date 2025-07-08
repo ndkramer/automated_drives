@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload PDF - Header/Detail System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .upload-area {
+            border: 3px dashed #dee2e6;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        }
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
+        }
+        .feature-card {
+            border-left: 4px solid #007bff;
+            background-color: #f8f9fa;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+        }
+        .processing-demo {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="fas fa-file-pdf"></i> PDF Header/Detail System
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{{ url_for('index') }}">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a>
+                <a class="nav-link active" href="{{ url_for('upload_pdf') }}">
+                    <i class="fas fa-upload"></i> Upload PDF
+                </a>
+                <a class="nav-link" href="{{ url_for('reports') }}">
+                    <i class="fas fa-chart-line"></i> Reports
+                </a>
+                <a class="nav-link" href="{{ url_for('compare') }}">
+                    <i class="fas fa-balance-scale"></i> Compare
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <div class="col-lg-8">
+                <h1><i class="fas fa-upload"></i> Upload PDF Document</h1>
+                <p class="lead">Upload purchase orders, invoices, and business documents for AI-powered header/detail extraction</p>
+
+                <!-- Upload Form -->
+                <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                    <input type="file" name="pdf_file" id="pdfFile" accept=".pdf" style="display: none;" required>
+                    <div class="upload-area" id="uploadArea">
+                        <div id="uploadContent">
+                            <i class="fas fa-cloud-upload-alt fa-4x text-primary mb-3"></i>
+                            <h4>Drag & Drop your PDF here</h4>
+                            <p class="text-muted">or click to browse files</p>
+                            <button type="button" class="btn btn-primary btn-lg" onclick="document.getElementById('pdfFile').click();">
+                                <i class="fas fa-folder-open"></i> Choose PDF File
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <div id="fileInfo" style="display: none;">
+                            <div class="alert alert-info">
+                                <strong>Selected File:</strong> <span id="fileName"></span><br>
+                                <strong>Size:</strong> <span id="fileSize"></span>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-success btn-lg" id="uploadBtn" disabled>
+                            <i class="fas fa-magic"></i> Process with AI Header/Detail Extraction
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Processing Demo -->
+                <div class="processing-demo mt-4">
+                    <h4><i class="fas fa-cogs"></i> What Happens During Processing</h4>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>1. PDF Text Extraction</h6>
+                            <p>• Extract all text content from PDF<br>
+                               • Parse document metadata<br>
+                               • Identify document structure</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>2. AI Header/Detail Analysis</h6>
+                            <p>• Identify document-level fields<br>
+                               • Extract individual line items<br>
+                               • Parse quantities, prices, descriptions</p>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>3. Database Storage</h6>
+                            <p>• Store header in pdf_headers table<br>
+                               • Store line items in pdf_line_items table<br>
+                               • Create 1-to-many relationship</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>4. Validation & Reporting</h6>
+                            <p>• Validate total calculations<br>
+                               • Generate extraction report<br>
+                               • Enable comparison analytics</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Features Sidebar -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-star"></i> Header/Detail Features</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="feature-card">
+                            <h6><i class="fas fa-layer-group"></i> Normalized Structure</h6>
+                            <p class="small mb-0">Documents stored in proper header (1) to line items (many) relationship for optimal querying and reporting.</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h6><i class="fas fa-list-ol"></i> Multi-Line Item Support</h6>
+                            <p class="small mb-0">Extract unlimited line items from purchase orders, invoices, and complex business documents.</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h6><i class="fas fa-robot"></i> AI-Powered Extraction</h6>
+                            <p class="small mb-0">Claude 3.5 Sonnet intelligently separates header data from line item details with high accuracy.</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h6><i class="fas fa-balance-scale"></i> Total Validation</h6>
+                            <p class="small mb-0">Automatically detects mismatches between header totals and calculated line item sums.</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h6><i class="fas fa-chart-line"></i> Advanced Analytics</h6>
+                            <p class="small mb-0">Generate line-level reports, vendor comparisons, and item code analytics.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Supported Document Types -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5><i class="fas fa-file-alt"></i> Supported Documents</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success"></i> Purchase Orders</li>
+                            <li><i class="fas fa-check text-success"></i> Invoices</li>
+                            <li><i class="fas fa-check text-success"></i> Order Acknowledgments</li>
+                            <li><i class="fas fa-check text-success"></i> Quotations</li>
+                            <li><i class="fas fa-check text-success"></i> Proforma Invoices</li>
+                            <li><i class="fas fa-check text-success"></i> Shipping Documents</li>
+                        </ul>
+                        
+                        <hr>
+                        
+                        <h6>File Requirements:</h6>
+                        <ul class="list-unstyled small text-muted">
+                            <li>• PDF format only</li>
+                            <li>• Maximum size: 16MB</li>
+                            <li>• Text-based (not scanned images)</li>
+                            <li>• Multiple line items supported</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Recent Uploads -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5><i class="fas fa-history"></i> Quick Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+                                <i class="fas fa-tachometer-alt"></i> View Dashboard
+                            </a>
+                            <a href="{{ url_for('reports') }}" class="btn btn-outline-info">
+                                <i class="fas fa-chart-line"></i> View Reports
+                            </a>
+                            <a href="{{ url_for('api_documents') }}" class="btn btn-outline-secondary" target="_blank">
+                                <i class="fas fa-code"></i> API Documentation
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // File upload handling
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('pdfFile');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+
+        // Click to upload
+        uploadArea.addEventListener('click', () => {
+            if (event.target.type !== 'file' && event.target.tagName !== 'BUTTON') {
+                fileInput.click();
+            }
+        });
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'application/pdf') {
+                fileInput.files = files;
+                handleFileSelect();
+            } else {
+                alert('Please drop a PDF file only.');
+            }
+        });
+
+        // File selection
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (file) {
+                fileName.textContent = file.name;
+                fileSize.textContent = formatFileSize(file.size);
+                fileInfo.style.display = 'block';
+                uploadBtn.disabled = false;
+                
+                // Update only the content div, preserving the file input
+                const uploadContent = document.getElementById('uploadContent');
+                uploadContent.innerHTML = `
+                    <i class="fas fa-file-pdf fa-4x text-success mb-3"></i>
+                    <h4 class="text-success">PDF Ready for Upload</h4>
+                    <p class="text-muted">${file.name}</p>
+                    <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('pdfFile').click();">
+                        <i class="fas fa-exchange-alt"></i> Choose Different File
+                    </button>
+                `;
+            }
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Form submission with loading state
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            // Add debug logging
+            const fileInput = document.getElementById('pdfFile');
+            const file = fileInput.files[0];
+            
+            console.log('Form submission started');
+            console.log('File input:', fileInput);
+            console.log('Selected file:', file);
+            console.log('File name:', file ? file.name : 'No file');
+            console.log('File size:', file ? file.size : 'No file');
+            
+            // Check if file is actually selected
+            if (!file) {
+                e.preventDefault();
+                alert('DEBUG: No file selected in form submission');
+                return false;
+            }
+            
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing PDF...';
+            uploadBtn.disabled = true;
+        });
+    </script>
+</body>
+</html> 

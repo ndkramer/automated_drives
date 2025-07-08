@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Detail - PDF Header/Detail System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .header-info {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .line-item-card {
+            border-left: 4px solid #007bff;
+            background-color: #f8f9fa;
+            margin-bottom: 10px;
+        }
+        .mismatch-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .value-highlight {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .confidence-high { color: #28a745; }
+        .confidence-medium { color: #ffc107; }
+        .confidence-low { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="fas fa-file-pdf"></i> PDF Header/Detail System
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{{ url_for('upload_pdf') }}">
+                    <i class="fas fa-upload"></i> Upload PDF
+                </a>
+                <a class="nav-link" href="{{ url_for('reports') }}">
+                    <i class="fas fa-chart-line"></i> Reports
+                </a>
+                <a class="nav-link" href="{{ url_for('compare') }}">
+                    <i class="fas fa-balance-scale"></i> Compare
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Header Breadcrumb -->
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">Document Detail</li>
+            </ol>
+        </nav>
+
+        <!-- Document Header Information -->
+        <div class="header-info">
+            <div class="row">
+                <div class="col-md-8">
+                    <h2><i class="fas fa-file-alt"></i> {{ document.filename }}</h2>
+                    <h4>{{ document.po_number or 'No PO Number' }}</h4>
+                    <p class="mb-2">
+                        <strong>Vendor:</strong> {{ document.vendor_name or 'Unknown' }} |
+                        <strong>Customer:</strong> {{ document.customer_name or 'Unknown' }}
+                    </p>
+                    <p class="mb-0">
+                        <strong>Upload Date:</strong> {{ document.upload_date.strftime('%Y-%m-%d %H:%M') if document.upload_date else 'Unknown' }}
+                    </p>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <div class="value-highlight">${{ "%.2f"|format(document.total_amount or 0) }}</div>
+                    <p>Total Amount</p>
+                    {% if document.ai_extraction_success %}
+                        <span class="badge bg-success">AI Extracted</span>
+                    {% else %}
+                        <span class="badge bg-warning">Manual Processing</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Total Mismatch Warning -->
+        {% if stats.total_mismatch %}
+        <div class="mismatch-warning">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h5><i class="fas fa-exclamation-triangle text-warning"></i> Total Mismatch Detected</h5>
+                    <p class="mb-0">The header total does not match the sum of line items. This may indicate missing line items or pricing discrepancies.</p>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <strong>Header Total:</strong> ${{ "%.2f"|format(stats.header_total) }}<br>
+                    <strong>Line Items Total:</strong> ${{ "%.2f"|format(stats.calculated_total) }}<br>
+                    <strong class="text-danger">Difference:</strong> ${{ "%.2f"|format(stats.mismatch_amount) }}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="row">
+            <!-- Header Details -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-info-circle"></i> Header Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <dl class="row">
+                            <dt class="col-sm-5">PO Number:</dt>
+                            <dd class="col-sm-7">{{ document.po_number or 'N/A' }}</dd>
+                            
+                            <dt class="col-sm-5">Invoice #:</dt>
+                            <dd class="col-sm-7">{{ document.invoice_number or 'N/A' }}</dd>
+                            
+                            <dt class="col-sm-5">Invoice Date:</dt>
+                            <dd class="col-sm-7">{{ document.invoice_date or 'N/A' }}</dd>
+                            
+                            <dt class="col-sm-5">Delivery Date:</dt>
+                            <dd class="col-sm-7">{{ document.delivery_date or 'N/A' }}</dd>
+                            
+                            <dt class="col-sm-5">Payment Terms:</dt>
+                            <dd class="col-sm-7">{{ document.payment_terms or 'N/A' }}</dd>
+                            
+                            <dt class="col-sm-5">Currency:</dt>
+                            <dd class="col-sm-7">{{ document.currency or 'USD' }}</dd>
+                        </dl>
+
+                        <hr>
+
+                        <dl class="row">
+                            <dt class="col-sm-5">Subtotal:</dt>
+                            <dd class="col-sm-7">${{ "%.2f"|format(document.subtotal or 0) }}</dd>
+                            
+                            <dt class="col-sm-5">Tax Rate:</dt>
+                            <dd class="col-sm-7">{{ "%.2f%%"|format((document.tax_rate or 0) * 100) }}</dd>
+                            
+                            <dt class="col-sm-5">Tax Amount:</dt>
+                            <dd class="col-sm-7">${{ "%.2f"|format(document.tax_amount or 0) }}</dd>
+                            
+                            <dt class="col-sm-5">Total:</dt>
+                            <dd class="col-sm-7"><strong>${{ "%.2f"|format(document.total_amount or 0) }}</strong></dd>
+                        </dl>
+
+                        <hr>
+
+                        <dl class="row">
+                            <dt class="col-sm-5">Contact Email:</dt>
+                            <dd class="col-sm-7">{{ document.contact_email or 'N/A' }}</dd>
+                            
+                            <dt class="col-sm-5">Contact Phone:</dt>
+                            <dd class="col-sm-7">{{ document.contact_phone or 'N/A' }}</dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <!-- Addresses -->
+                {% if document.shipping_address or document.billing_address %}
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5><i class="fas fa-map-marker-alt"></i> Addresses</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if document.shipping_address %}
+                        <h6>Shipping Address:</h6>
+                        <address>{{ document.shipping_address }}</address>
+                        {% endif %}
+                        
+                        {% if document.billing_address %}
+                        <h6>Billing Address:</h6>
+                        <address>{{ document.billing_address }}</address>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Line Items -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-list"></i> Line Items ({{ stats.line_item_count }})</h5>
+                        <span class="badge bg-primary">Total: ${{ "%.2f"|format(stats.calculated_total) }}</span>
+                    </div>
+                    <div class="card-body">
+                        {% if document.line_items %}
+                        {% for item in document.line_items %}
+                        <div class="line-item-card card">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-1">
+                                        <span class="badge bg-secondary">{{ item.line_number or loop.index }}</span>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <h6 class="card-title">
+                                            {% if item.item_code %}
+                                                <span class="badge bg-info">{{ item.item_code }}</span>
+                                            {% endif %}
+                                            {{ item.description or 'No description' }}
+                                        </h6>
+                                        {% if item.material or item.finish or item.drawing_number %}
+                                        <p class="card-text small text-muted">
+                                            {% if item.material %}Material: {{ item.material }} | {% endif %}
+                                            {% if item.finish %}Finish: {{ item.finish }} | {% endif %}
+                                            {% if item.drawing_number %}Drawing: {{ item.drawing_number }}{% endif %}
+                                            {% if item.revision %} Rev {{ item.revision }}{% endif %}
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-4 text-md-end">
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <strong>Qty:</strong> {{ item.quantity or 0 }}<br>
+                                                <small>{{ item.unit_of_measure or 'each' }}</small>
+                                            </div>
+                                            <div class="col-6">
+                                                <strong>Unit:</strong> ${{ "%.2f"|format(item.unit_price or 0) }}<br>
+                                                <strong>Total:</strong> ${{ "%.2f"|format(item.line_total or 0) }}
+                                            </div>
+                                        </div>
+                                        {% if item.discount_amount and item.discount_amount > 0 %}
+                                        <p class="text-success small mt-1">
+                                            Discount: ${{ "%.2f"|format(item.discount_amount) }}
+                                        </p>
+                                        {% endif %}
+                                        {% if item.line_delivery_date %}
+                                        <p class="text-muted small mt-1">
+                                            Delivery: {{ item.line_delivery_date }}
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                
+                                {% if item.extraction_confidence %}
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <small class="text-muted">
+                                            AI Confidence: 
+                                            {% if item.extraction_confidence >= 0.8 %}
+                                                <span class="confidence-high">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
+                                            {% elif item.extraction_confidence >= 0.6 %}
+                                                <span class="confidence-medium">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
+                                            {% else %}
+                                                <span class="confidence-low">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                            <h5>No line items found</h5>
+                            <p class="text-muted">This document may not have been processed with line item extraction</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Dashboard
+                        </a>
+                        <a href="{{ url_for('api_document', header_id=document.id) }}" class="btn btn-info" target="_blank">
+                            <i class="fas fa-code"></i> View JSON
+                        </a>
+                        {% if document.ai_extraction_success %}
+                        <button class="btn btn-success" disabled>
+                            <i class="fas fa-robot"></i> AI Processed
+                        </button>
+                        {% else %}
+                        <button class="btn btn-warning" disabled>
+                            <i class="fas fa-hand-paper"></i> Manual Processing Required
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Debug Information (if needed) -->
+        {% if document.ai_extracted_data %}
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-bug"></i> Debug Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>File Size:</strong> {{ document.file_size|filesizeformat if document.file_size else 'Unknown' }}</p>
+                        <p><strong>Pages:</strong> {{ document.page_count or 'Unknown' }}</p>
+                        <p><strong>Extraction Model:</strong> {{ document.extraction_model or 'Unknown' }}</p>
+                        <p><strong>Processing Status:</strong> {{ document.status or 'Unknown' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 
