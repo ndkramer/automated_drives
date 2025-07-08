@@ -153,9 +153,10 @@ def upload_pdf():
 
 @app.route('/document/<int:header_id>')
 def view_document(header_id):
-    """View a specific document with all its line items"""
+    """View a specific document with all its line items and ETOSandbox comparison"""
     try:
-        document = db_service.get_header_with_line_items(header_id)
+        # Get document with comparison data
+        document = db_service.get_header_with_line_items_and_comparison(header_id)
         if not document:
             flash('Document not found', 'error')
             return redirect(url_for('index'))
@@ -173,6 +174,17 @@ def view_document(header_id):
             'total_mismatch': total_mismatch,
             'mismatch_amount': calculated_total - header_total
         }
+        
+        # Add comparison statistics if available
+        comparison = document.get('comparison', {})
+        if comparison.get('comparison_summary'):
+            stats['comparison'] = comparison['comparison_summary']
+            stats['po_found_in_eto'] = comparison.get('po_found_in_eto', False)
+            stats['comparison_available'] = comparison.get('comparison_available', False)
+        else:
+            stats['comparison'] = None
+            stats['po_found_in_eto'] = False
+            stats['comparison_available'] = comparison.get('comparison_available', False)
         
         return render_template('document_detail.html', document=document, stats=stats)
         
@@ -278,6 +290,72 @@ def reports():
 def compare():
     """Comparison page placeholder"""
     return render_template('compare_header_detail.html')
+
+@app.route('/update-eto', methods=['POST'])
+def update_eto():
+    """Update ETOSandbox database with values from PDF"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        # Validate required fields
+        required_fields = ['detail_id', 'quantity', 'unit_price', 'delivery_date']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'Missing required field: {field}'
+                }), 400
+        
+        # Log the update request
+        logger.info(f"Updating ETO detail ID {data['detail_id']} with new values")
+        logger.info(f"New values: Qty={data['quantity']}, Price=${data['unit_price']}, Date={data['delivery_date']}")
+        
+        # Get the comparison service and update ETOSandbox
+        comparison_service = db_service.comparison_service
+        if not comparison_service:
+            return jsonify({
+                'success': False,
+                'error': 'Comparison service not available'
+            }), 500
+        
+        # Update the ETOSandbox database
+        result = comparison_service.update_eto_line_item(
+            detail_id=data['detail_id'],
+            quantity=float(data['quantity']),
+            unit_price=float(data['unit_price']),
+            delivery_date=data['delivery_date']
+        )
+        
+        if result['success']:
+            logger.info(f"Successfully updated ETO detail ID {data['detail_id']}")
+            return jsonify({
+                'success': True,
+                'message': 'ETOSandbox data updated successfully'
+            })
+        else:
+            logger.error(f"Failed to update ETO detail ID {data['detail_id']}: {result.get('error', 'Unknown error')}")
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Update failed')
+            }), 500
+            
+    except ValueError as e:
+        logger.error(f"Invalid data format in ETO update: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Invalid data format: {str(e)}'
+        }), 400
+    except Exception as e:
+        logger.error(f"Error updating ETO data: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Server error: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True) 

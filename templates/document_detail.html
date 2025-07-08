@@ -33,6 +33,44 @@
         .confidence-high { color: #28a745; }
         .confidence-medium { color: #ffc107; }
         .confidence-low { color: #dc3545; }
+        
+        /* Comparison specific styles */
+        .comparison-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .pdf-row {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }
+        .eto-row {
+            background-color: #e8f5e8;
+            border-left: 4px solid #28a745;
+        }
+        .no-match-row {
+            background-color: #fff5f5;
+            border-left: 4px solid #dc3545;
+        }
+        .difference-highlight {
+            color: #dc3545 !important;
+            font-weight: bold;
+            background-color: #ffebee;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .match-indicator {
+            font-size: 0.8rem;
+            margin-left: 5px;
+        }
+        .source-label {
+            font-size: 0.7rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 <body>
@@ -196,81 +234,308 @@
                 {% endif %}
             </div>
 
-            <!-- Line Items -->
+            <!-- Line Items with ETOSandbox Comparison -->
             <div class="col-lg-8">
+                <!-- Comparison Summary -->
+                {% if stats.comparison_available and stats.po_found_in_eto %}
+                <div class="comparison-summary">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h6><i class="fas fa-balance-scale"></i> ETOSandbox Comparison Available</h6>
+                            <p class="mb-0">Comparing {{ stats.line_item_count }} PDF line items with ETOSandbox data for PO {{ document.po_number }}</p>
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            {% if stats.comparison %}
+                            <div class="small">
+                                <strong>Perfect Matches:</strong> {{ stats.comparison.perfect_matches }}<br>
+                                <strong>Partial Matches:</strong> {{ stats.comparison.partial_matches }}<br>
+                                <strong>No Matches:</strong> {{ stats.comparison.no_matches }}<br>
+                                <strong>Accuracy:</strong> {{ "%.1f%%"|format(stats.comparison.accuracy_percentage) }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% elif stats.comparison_available and not stats.po_found_in_eto %}
+                <div class="alert alert-warning">
+                    <h6><i class="fas fa-exclamation-triangle"></i> PO Not Found in ETOSandbox</h6>
+                    <p class="mb-0">PO {{ document.po_number or 'N/A' }} was not found in the ETOSandbox database. No comparison available.</p>
+                </div>
+                {% elif not stats.comparison_available %}
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle"></i> Comparison Service Unavailable</h6>
+                    <p class="mb-0">ETOSandbox comparison is not available. Showing PDF data only.</p>
+                </div>
+                {% endif %}
+
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5><i class="fas fa-list"></i> Line Items ({{ stats.line_item_count }})</h5>
-                        <span class="badge bg-primary">Total: ${{ "%.2f"|format(stats.calculated_total) }}</span>
+                        <h5><i class="fas fa-list"></i> Line Items Comparison ({{ stats.line_item_count }})</h5>
+                        <div>
+                            <span class="badge bg-primary me-2">PDF Total: ${{ "%.2f"|format(stats.calculated_total) }}</span>
+                            {% if stats.comparison_available and stats.po_found_in_eto %}
+                            <span class="badge bg-success">ETOSandbox Linked</span>
+                            {% endif %}
+                        </div>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-0">
                         {% if document.line_items %}
-                        {% for item in document.line_items %}
-                        <div class="line-item-card card">
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-1">
-                                        <span class="badge bg-secondary">{{ item.line_number or loop.index }}</span>
-                                    </div>
-                                    <div class="col-md-7">
-                                        <h6 class="card-title">
-                                            {% if item.item_code %}
-                                                <span class="badge bg-info">{{ item.item_code }}</span>
-                                            {% endif %}
-                                            {{ item.description or 'No description' }}
-                                        </h6>
-                                        {% if item.material or item.finish or item.drawing_number %}
-                                        <p class="card-text small text-muted">
-                                            {% if item.material %}Material: {{ item.material }} | {% endif %}
-                                            {% if item.finish %}Finish: {{ item.finish }} | {% endif %}
-                                            {% if item.drawing_number %}Drawing: {{ item.drawing_number }}{% endif %}
-                                            {% if item.revision %} Rev {{ item.revision }}{% endif %}
-                                        </p>
-                                        {% endif %}
-                                    </div>
-                                    <div class="col-md-4 text-md-end">
-                                        <div class="row">
-                                            <div class="col-6">
-                                                <strong>Qty:</strong> {{ item.quantity or 0 }}<br>
-                                                <small>{{ item.unit_of_measure or 'each' }}</small>
-                                            </div>
-                                            <div class="col-6">
-                                                <strong>Unit:</strong> ${{ "%.2f"|format(item.unit_price or 0) }}<br>
-                                                <strong>Total:</strong> ${{ "%.2f"|format(item.line_total or 0) }}
+                            {% if stats.comparison_available and stats.po_found_in_eto and document.comparison.comparison_results.comparisons %}
+                                <!-- Comparison Mode: Show PDF and ETOSandbox rows alternating -->
+                                {% for comparison in document.comparison.comparison_results.comparisons %}
+                                    {% set pdf_item = comparison.pdf_line %}
+                                    {% set eto_item = comparison.eto_line %}
+                                    {% set differences = comparison.differences %}
+                                    
+                                    {% if pdf_item %}
+                                    <!-- PDF Row -->
+                                    <div class="card mb-2 pdf-row">
+                                        <div class="card-body py-3">
+                                            <div class="row align-items-center">
+                                                <div class="col-md-1">
+                                                    <div class="text-center">
+                                                        <span class="badge bg-primary">PDF</span>
+                                                        <div class="source-label text-primary">PDF</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <h6 class="mb-1">
+                                                        {% if pdf_item.item_code %}
+                                                            <span class="badge bg-info {% if differences.item_code %}difference-highlight{% endif %}">
+                                                                {{ pdf_item.item_code }}
+                                                            </span>
+                                                        {% endif %}
+                                                        {{ pdf_item.description or 'No description' }}
+                                                    </h6>
+                                                    {% if pdf_item.material or pdf_item.finish or pdf_item.drawing_number %}
+                                                    <p class="card-text small text-muted mb-0">
+                                                        {% if pdf_item.material %}Material: {{ pdf_item.material }} | {% endif %}
+                                                        {% if pdf_item.finish %}Finish: {{ pdf_item.finish }} | {% endif %}
+                                                        {% if pdf_item.drawing_number %}Drawing: {{ pdf_item.drawing_number }}{% endif %}
+                                                        {% if pdf_item.revision %} Rev {{ pdf_item.revision }}{% endif %}
+                                                    </p>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="col-md-5">
+                                                    <div class="row small">
+                                                        <div class="col-3">
+                                                            <strong>Qty:</strong><br>
+                                                            <span class="{% if differences.quantity %}difference-highlight{% endif %}">
+                                                                {{ pdf_item.quantity or 0 }}
+                                                                {% if differences.quantity %}
+                                                                    <i class="fas fa-exclamation-triangle match-indicator text-danger" title="Mismatch with ETOSandbox"></i>
+                                                                {% endif %}
+                                                            </span><br>
+                                                            <small class="text-muted">{{ pdf_item.unit_of_measure or 'each' }}</small>
+                                                        </div>
+                                                        <div class="col-4">
+                                                            <strong>Unit Price:</strong><br>
+                                                            <span class="{% if differences.unit_price %}difference-highlight{% endif %}">
+                                                                ${{ "%.2f"|format(pdf_item.unit_price or 0) }}
+                                                                {% if differences.unit_price %}
+                                                                    <i class="fas fa-exclamation-triangle match-indicator text-danger" title="Mismatch with ETOSandbox"></i>
+                                                                {% endif %}
+                                                            </span>
+                                                        </div>
+                                                        <div class="col-5">
+                                                            <strong>Delivery:</strong><br>
+                                                            <span class="{% if differences.delivery_date %}difference-highlight{% endif %}">
+                                                                {{ pdf_item.line_delivery_date or 'N/A' }}
+                                                                {% if differences.delivery_date %}
+                                                                    <i class="fas fa-exclamation-triangle match-indicator text-danger" title="Mismatch with ETOSandbox"></i>
+                                                                {% endif %}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mt-2">
+                                                        <strong>Line Total: ${{ "%.2f"|format(pdf_item.line_total or 0) }}</strong>
+                                                        {% if eto_item %}
+                                                            {% if comparison.has_differences %}
+                                                                <button class="btn btn-sm ms-2" 
+                                                                        style="color: #dc3545; border-color: #dc3545; background-color: transparent;"
+                                                                        onmouseover="this.style.backgroundColor='#dc3545'; this.style.color='white';"
+                                                                        onmouseout="this.style.backgroundColor='transparent'; this.style.color='#dc3545';"
+                                                                        onclick="showUpdateEtoModal('{{ eto_item.detail_id }}', '{{ pdf_item.quantity }}', '{{ pdf_item.unit_price }}', '{{ pdf_item.line_delivery_date }}', {{ loop.index0 }})"
+                                                                        title="Click to update ETOSandbox with PDF values">
+                                                                    <i class="fas fa-edit"></i> {{ "%.0f%%"|format(comparison.match_score * 100) }} Match
+                                                                </button>
+                                                            {% else %}
+                                                                <button class="btn btn-sm ms-2" 
+                                                                        style="color: #28a745; border-color: #28a745; background-color: transparent;"
+                                                                        onmouseover="this.style.backgroundColor='#28a745'; this.style.color='white';"
+                                                                        onmouseout="this.style.backgroundColor='transparent'; this.style.color='#28a745';"
+                                                                        onclick="showUpdateEtoModal('{{ eto_item.detail_id }}', '{{ pdf_item.quantity }}', '{{ pdf_item.unit_price }}', '{{ pdf_item.line_delivery_date }}', {{ loop.index0 }})"
+                                                                        title="Click to update ETOSandbox with PDF values">
+                                                                    <i class="fas fa-check"></i> Perfect Match
+                                                                </button>
+                                                            {% endif %}
+                                                        {% else %}
+                                                            <span class="badge bg-danger ms-2">No ETO Match</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                        {% if item.discount_amount and item.discount_amount > 0 %}
-                                        <p class="text-success small mt-1">
-                                            Discount: ${{ "%.2f"|format(item.discount_amount) }}
-                                        </p>
-                                        {% endif %}
-                                        {% if item.line_delivery_date %}
-                                        <p class="text-muted small mt-1">
-                                            Delivery: {{ item.line_delivery_date }}
-                                        </p>
-                                        {% endif %}
                                     </div>
-                                </div>
+                                    {% endif %}
+                                    
+                                    {% if eto_item %}
+                                    <!-- ETOSandbox Row -->
+                                    <div class="card mb-3 eto-row">
+                                        <div class="card-body py-3">
+                                            <div class="row align-items-center">
+                                                <div class="col-md-1">
+                                                    <div class="text-center">
+                                                        <span class="badge bg-success">ETO</span>
+                                                        <div class="source-label text-success">ETO</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <h6 class="mb-1">
+                                                        {% if eto_item.item_id %}
+                                                            <span class="badge bg-secondary">{{ eto_item.item_id }}</span>
+                                                        {% endif %}
+                                                        {{ eto_item.description or 'No description' }}
+                                                    </h6>
+                                                </div>
+                                                <div class="col-md-5">
+                                                    <div class="row small">
+                                                        <div class="col-3">
+                                                            <strong>Qty:</strong><br>
+                                                            {{ eto_item.quantity or 0 }}<br>
+                                                            <small class="text-muted">{{ eto_item.unit_of_measure or 'each' }}</small>
+                                                        </div>
+                                                        <div class="col-4">
+                                                            <strong>Unit Price:</strong><br>
+                                                            ${{ "%.2f"|format(eto_item.unit_price or 0) }}
+                                                        </div>
+                                                        <div class="col-5">
+                                                            <strong>Delivery:</strong><br>
+                                                            {{ eto_item.date_required.strftime('%Y-%m-%d') if eto_item.date_required else 'N/A' }}
+                                                        </div>
+                                                    </div>
+                                                    <div class="mt-2">
+                                                        <strong>Line Total: ${{ "%.2f"|format(eto_item.line_total or 0) }}</strong>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% elif pdf_item %}
+                                    <!-- No matching ETO item -->
+                                    <div class="card mb-3 no-match-row">
+                                        <div class="card-body py-2">
+                                            <div class="row align-items-center">
+                                                <div class="col-md-1">
+                                                    <div class="text-center">
+                                                        <span class="badge bg-danger">!</span>
+                                                        <div class="source-label text-danger">ETO</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-11">
+                                                    <p class="mb-0 text-danger">
+                                                        <i class="fas fa-exclamation-triangle"></i>
+                                                        <strong>No matching line found in ETOSandbox for line {{ pdf_item.line_number }}</strong>
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
                                 
-                                {% if item.extraction_confidence %}
-                                <div class="row mt-2">
-                                    <div class="col-12">
-                                        <small class="text-muted">
-                                            AI Confidence: 
-                                            {% if item.extraction_confidence >= 0.8 %}
-                                                <span class="confidence-high">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
-                                            {% elif item.extraction_confidence >= 0.6 %}
-                                                <span class="confidence-medium">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
-                                            {% else %}
-                                                <span class="confidence-low">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
-                                            {% endif %}
-                                        </small>
+                                <!-- Show ETO-only items (items in ETOSandbox but not in PDF) -->
+                                {% for comparison in document.comparison.comparison_results.comparisons %}
+                                    {% if comparison.eto_line and not comparison.pdf_line %}
+                                    <div class="card mb-3 no-match-row">
+                                        <div class="card-body py-2">
+                                            <div class="row align-items-center">
+                                                <div class="col-md-1">
+                                                    <div class="text-center">
+                                                        <span class="badge bg-danger">!</span>
+                                                        <div class="source-label text-danger">PDF</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-11">
+                                                    <p class="mb-0 text-danger">
+                                                        <i class="fas fa-exclamation-triangle"></i>
+                                                        <strong>ETOSandbox line {{ comparison.eto_line.line_number }} ({{ comparison.eto_line.item_id }}) not found in PDF</strong>
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <!-- Standard Mode: Show PDF data only -->
+                                {% for item in document.line_items %}
+                                <div class="card mb-2 pdf-row">
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-1">
+                                                <span class="badge bg-secondary">{{ item.line_number or loop.index }}</span>
+                                            </div>
+                                            <div class="col-md-7">
+                                                <h6 class="card-title">
+                                                    {% if item.item_code %}
+                                                        <span class="badge bg-info">{{ item.item_code }}</span>
+                                                    {% endif %}
+                                                    {{ item.description or 'No description' }}
+                                                </h6>
+                                                {% if item.material or item.finish or item.drawing_number %}
+                                                <p class="card-text small text-muted">
+                                                    {% if item.material %}Material: {{ item.material }} | {% endif %}
+                                                    {% if item.finish %}Finish: {{ item.finish }} | {% endif %}
+                                                    {% if item.drawing_number %}Drawing: {{ item.drawing_number }}{% endif %}
+                                                    {% if item.revision %} Rev {{ item.revision }}{% endif %}
+                                                </p>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-md-4 text-md-end">
+                                                <div class="row">
+                                                    <div class="col-6">
+                                                        <strong>Qty:</strong> {{ item.quantity or 0 }}<br>
+                                                        <small>{{ item.unit_of_measure or 'each' }}</small>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <strong>Unit:</strong> ${{ "%.2f"|format(item.unit_price or 0) }}<br>
+                                                        <strong>Total:</strong> ${{ "%.2f"|format(item.line_total or 0) }}
+                                                    </div>
+                                                </div>
+                                                {% if item.discount_amount and item.discount_amount > 0 %}
+                                                <p class="text-success small mt-1">
+                                                    Discount: ${{ "%.2f"|format(item.discount_amount) }}
+                                                </p>
+                                                {% endif %}
+                                                {% if item.line_delivery_date %}
+                                                <p class="text-muted small mt-1">
+                                                    Delivery: {{ item.line_delivery_date }}
+                                                </p>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        
+                                        {% if item.extraction_confidence %}
+                                        <div class="row mt-2">
+                                            <div class="col-12">
+                                                <small class="text-muted">
+                                                    AI Confidence: 
+                                                    {% if item.extraction_confidence >= 0.8 %}
+                                                        <span class="confidence-high">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
+                                                    {% elif item.extraction_confidence >= 0.6 %}
+                                                        <span class="confidence-medium">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
+                                                    {% else %}
+                                                        <span class="confidence-low">{{ "%.0f%%"|format(item.extraction_confidence * 100) }}</span>
+                                                    {% endif %}
+                                                </small>
+                                            </div>
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endfor %}
+                                {% endfor %}
+                            {% endif %}
                         {% else %}
                         <div class="text-center py-4">
                             <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
@@ -328,6 +593,150 @@
         {% endif %}
     </div>
 
+    <!-- Update ETO Modal -->
+    <div class="modal fade" id="updateEtoModal" tabindex="-1" aria-labelledby="updateEtoModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="updateEtoModalLabel">
+                        <i class="fas fa-edit"></i> Update ETOSandbox Data
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="updateEtoForm">
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i>
+                            Update the ETOSandbox database with the values from the PDF.
+                        </div>
+                        
+                        <input type="hidden" id="etoDetailId" name="detail_id">
+                        <input type="hidden" id="headerIdInput" name="header_id" value="{{ document.id }}">
+                        
+                        <div class="mb-3">
+                            <label for="etoQuantity" class="form-label">
+                                <strong>Quantity</strong>
+                            </label>
+                            <input type="number" class="form-control" id="etoQuantity" name="quantity" 
+                                   step="0.0001" min="0" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="etoUnitPrice" class="form-label">
+                                <strong>Unit Price ($)</strong>
+                            </label>
+                            <input type="number" class="form-control" id="etoUnitPrice" name="unit_price" 
+                                   step="0.01" min="0" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="etoDeliveryDate" class="form-label">
+                                <strong>Delivery Date</strong>
+                            </label>
+                            <input type="date" class="form-control" id="etoDeliveryDate" name="delivery_date" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fas fa-database"></i> Update ETO
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        function showUpdateEtoModal(detailId, quantity, unitPrice, deliveryDate, lineIndex) {
+            console.log('Opening modal for detail ID:', detailId);
+            
+            // Set the detail ID
+            document.getElementById('etoDetailId').value = detailId;
+            
+            // Pre-populate the form with PDF values
+            document.getElementById('etoQuantity').value = parseFloat(quantity) || 0;
+            document.getElementById('etoUnitPrice').value = parseFloat(unitPrice) || 0;
+            
+            // Handle delivery date
+            if (deliveryDate && deliveryDate !== 'N/A' && deliveryDate !== 'None') {
+                // Try to parse the date and convert to YYYY-MM-DD format
+                try {
+                    let date = new Date(deliveryDate);
+                    if (!isNaN(date.getTime())) {
+                        document.getElementById('etoDeliveryDate').value = date.toISOString().split('T')[0];
+                    }
+                } catch (e) {
+                    console.warn('Could not parse delivery date:', deliveryDate);
+                }
+            }
+            
+            // Show the modal
+            const modal = new bootstrap.Modal(document.getElementById('updateEtoModal'));
+            modal.show();
+        }
+        
+        // Handle form submission
+        document.getElementById('updateEtoForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const data = {
+                detail_id: formData.get('detail_id'),
+                header_id: formData.get('header_id'),
+                quantity: parseFloat(formData.get('quantity')),
+                unit_price: parseFloat(formData.get('unit_price')),
+                delivery_date: formData.get('delivery_date')
+            };
+            
+            console.log('Submitting ETO update:', data);
+            
+            // Show loading state
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+            submitBtn.disabled = true;
+            
+            // Send the update request
+            fetch('/update-eto', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                console.log('Update result:', result);
+                
+                if (result.success) {
+                    // Show success message
+                    alert('ETOSandbox data updated successfully!');
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('updateEtoModal'));
+                    modal.hide();
+                    
+                    // Reload the page to show updated comparison
+                    window.location.reload();
+                } else {
+                    alert('Error updating ETOSandbox data: ' + (result.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating ETOSandbox data. Please try again.');
+            })
+            .finally(() => {
+                // Restore button state
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            });
+        });
+    </script>
 </body>
 </html> 

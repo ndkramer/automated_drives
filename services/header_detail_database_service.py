@@ -24,6 +24,17 @@ class HeaderDetailDatabaseService:
         
         self.connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={self.server};DATABASE={self.database};UID={self.username};PWD={self.password}'
         
+        # Initialize comparison service
+        try:
+            from .po_comparison_service import POComparisonService
+            self.comparison_service = POComparisonService()
+            self.comparison_available = True
+            logger.info("PO comparison service initialized")
+        except Exception as e:
+            logger.warning(f"PO comparison service not available: {e}")
+            self.comparison_service = None
+            self.comparison_available = False
+        
         # Initialize database on startup
         self._initialize_database()
         
@@ -425,6 +436,84 @@ class HeaderDetailDatabaseService:
         except Exception as e:
             logger.error(f"Error retrieving header with line items: {e}")
             return None
+    
+    def get_header_with_line_items_and_comparison(self, header_id: int) -> Dict[str, Any]:
+        """
+        Get complete header record with all line items AND ETOSandbox comparison data
+        
+        Args:
+            header_id: PDF header ID
+            
+        Returns:
+            Dictionary containing header data, line items, and comparison results
+        """
+        try:
+            # First get the basic header and line items
+            document = self.get_header_with_line_items(header_id)
+            if not document:
+                return None
+            
+            # Initialize comparison data
+            comparison_data = {
+                'comparison_available': self.comparison_available,
+                'comparison_results': None,
+                'comparison_summary': None,
+                'po_found_in_eto': False
+            }
+            
+            # If comparison service is available and we have a PO number, get comparison data
+            if self.comparison_available and self.comparison_service:
+                po_number = document.get('po_number')
+                line_items = document.get('line_items', [])
+                
+                if po_number and line_items:
+                    logger.info(f"Getting comparison data for PO {po_number} with {len(line_items)} line items")
+                    
+                    # Get comparison results from ETOSandbox
+                    comparison_results = self.comparison_service.get_po_comparison_data(po_number, line_items)
+                    
+                    if comparison_results['success']:
+                        comparison_data['comparison_results'] = comparison_results
+                        comparison_data['po_found_in_eto'] = comparison_results.get('po_found', False)
+                        
+                        # Generate comparison summary
+                        if comparison_results.get('comparisons'):
+                            comparison_data['comparison_summary'] = self.comparison_service.get_comparison_summary(
+                                comparison_results['comparisons']
+                            )
+                            
+                            logger.info(f"Comparison completed: {comparison_data['comparison_summary']}")
+                        else:
+                            logger.warning(f"No comparison data found for PO {po_number}")
+                    else:
+                        logger.error(f"Comparison failed: {comparison_results.get('error')}")
+                        comparison_data['comparison_error'] = comparison_results.get('error')
+                else:
+                    logger.info(f"Skipping comparison - PO number: {po_number}, Line items: {len(line_items)}")
+            else:
+                logger.info("Comparison service not available")
+            
+            # Merge comparison data into document
+            document['comparison'] = comparison_data
+            
+            return document
+                
+        except Exception as e:
+            logger.error(f"Error retrieving header with line items and comparison: {e}")
+            # Return document without comparison data if comparison fails
+            try:
+                document = self.get_header_with_line_items(header_id)
+                if document:
+                    document['comparison'] = {
+                        'comparison_available': False,
+                        'comparison_error': str(e),
+                        'comparison_results': None,
+                        'comparison_summary': None,
+                        'po_found_in_eto': False
+                    }
+                return document
+            except:
+                return None
     
     def get_all_headers_summary(self) -> List[Dict[str, Any]]:
         """Get summary of all headers with line item counts"""
