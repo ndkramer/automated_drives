@@ -160,22 +160,23 @@ class PDFProcessor:
         return '\n\n'.join(full_text)
 
     def _extract_with_ocr(self, filepath: str) -> str:
-        """Extract text using OCR (requires pdf2image and pytesseract)"""
+        """Extract text using OCR with enhanced image preprocessing for better accuracy"""
         try:
             # Try to import OCR dependencies
             from pdf2image import convert_from_path
             import pytesseract
+            from PIL import Image, ImageEnhance, ImageFilter
             
             logger.info("Attempting OCR extraction for image-based PDF...")
             
-            # Convert PDF to images
-            images = convert_from_path(filepath, dpi=300)
+            # Convert PDF to images with higher DPI for better quality
+            images = convert_from_path(filepath, dpi=400)
             
             full_text = []
             for page_num, image in enumerate(images, 1):
                 try:
-                    # Perform OCR on the image
-                    page_text = pytesseract.image_to_string(image, lang='eng')
+                    # Enhanced OCR with multiple attempts
+                    page_text = self._ocr_with_preprocessing(image)
                     if page_text.strip():
                         full_text.append(f"--- Page {page_num} (OCR) ---\n{page_text}")
                 except Exception as e:
@@ -186,6 +187,121 @@ class PDFProcessor:
         except ImportError:
             logger.warning("OCR dependencies not available. Install pdf2image and pytesseract for image-based PDF support.")
             raise Exception("OCR dependencies not installed")
+
+    def _ocr_with_preprocessing(self, image) -> str:
+        """
+        Perform OCR with image preprocessing and multiple configurations
+        to handle poor quality scanned documents
+        """
+        import pytesseract
+        from PIL import Image, ImageEnhance, ImageFilter
+        
+        # Try multiple preprocessing approaches
+        preprocessing_methods = [
+            self._preprocess_default,
+            self._preprocess_high_contrast,
+            self._preprocess_denoised,
+            self._preprocess_sharpened
+        ]
+        
+        # OCR configurations optimized for different document types
+        ocr_configs = [
+            '--oem 3 --psm 6',  # Uniform block of text
+            '--oem 3 --psm 4',  # Single column of text  
+            '--oem 3 --psm 3',  # Fully automatic page segmentation
+            '--oem 3 --psm 1',  # Automatic page segmentation with OSD
+        ]
+        
+        best_result = ""
+        best_confidence = 0
+        
+        for preprocess_method in preprocessing_methods:
+            try:
+                processed_image = preprocess_method(image)
+                
+                for config in ocr_configs:
+                    try:
+                        # Get OCR result with confidence data
+                        result = pytesseract.image_to_string(processed_image, config=config)
+                        
+                        # Simple confidence estimation based on text quality
+                        confidence = self._estimate_ocr_confidence(result)
+                        
+                        if confidence > best_confidence and len(result.strip()) > 50:
+                            best_result = result
+                            best_confidence = confidence
+                            
+                    except Exception as e:
+                        logger.debug(f"OCR config {config} failed: {e}")
+                        continue
+                        
+            except Exception as e:
+                logger.debug(f"Preprocessing method failed: {e}")
+                continue
+        
+        return best_result if best_result else pytesseract.image_to_string(image)
+
+    def _preprocess_default(self, image):
+        """Default preprocessing - convert to grayscale"""
+        return image.convert('L')
+
+    def _preprocess_high_contrast(self, image):
+        """High contrast preprocessing for faded documents"""
+        from PIL import ImageEnhance
+        image = image.convert('L')
+        enhancer = ImageEnhance.Contrast(image)
+        return enhancer.enhance(2.5)
+
+    def _preprocess_denoised(self, image):
+        """Denoising preprocessing for noisy scans"""
+        from PIL import ImageFilter
+        image = image.convert('L')
+        return image.filter(ImageFilter.MedianFilter(3))
+
+    def _preprocess_sharpened(self, image):
+        """Sharpening preprocessing for blurry documents"""
+        from PIL import ImageEnhance, ImageFilter
+        image = image.convert('L')
+        # Apply sharpening filter
+        image = image.filter(ImageFilter.SHARPEN)
+        # Enhance sharpness
+        enhancer = ImageEnhance.Sharpness(image)
+        return enhancer.enhance(2.0)
+
+    def _estimate_ocr_confidence(self, text: str) -> float:
+        """
+        Estimate OCR confidence based on text characteristics
+        Higher scores for text with more recognizable patterns
+        """
+        if not text or len(text.strip()) < 10:
+            return 0.0
+        
+        confidence_score = 0.0
+        
+        # Check for common business document patterns
+        patterns = [
+            (r'\b\d{4,6}\b', 5.0),  # Invoice/PO numbers
+            (r'\$\d+\.?\d*', 10.0),  # Currency amounts
+            (r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', 8.0),  # Dates
+            (r'\b[A-Z]{2,}\s+[A-Z]{2,}\b', 3.0),  # Company names
+            (r'\(\d{3}\)\s*\d{3}-\d{4}', 7.0),  # Phone numbers
+            (r'\b\d{5}(-\d{4})?\b', 4.0),  # ZIP codes
+        ]
+        
+        for pattern, weight in patterns:
+            import re
+            matches = len(re.findall(pattern, text))
+            confidence_score += matches * weight
+        
+        # Penalize for too many special characters (OCR errors)
+        special_char_ratio = len(re.findall(r'[^a-zA-Z0-9\s\.,\-\(\)\/\$]', text)) / len(text)
+        confidence_score -= special_char_ratio * 20
+        
+        # Bonus for reasonable text length
+        if 100 <= len(text) <= 2000:
+            confidence_score += 5.0
+        
+        return max(0.0, confidence_score)
 
     def _analyze_pdf_images(self, filepath: str) -> str:
         """Analyze if PDF contains images instead of text"""
