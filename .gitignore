@@ -30,3 +30,4 @@ node_modules/
 *.env # Environment files with tokens
 .env
 *.token
+.cursor/
