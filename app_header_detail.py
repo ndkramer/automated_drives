@@ -30,6 +30,35 @@ ai_service = HeaderDetailAIService()
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
+@app.template_filter('safe_strftime')
+def safe_strftime_filter(date_value, format_string='%Y-%m-%d'):
+    """
+    Template filter to safely format dates that might be strings or datetime objects
+    """
+    if not date_value:
+        return 'N/A'
+    
+    # If it's already a string, try to parse it first
+    if isinstance(date_value, str):
+        try:
+            # Try parsing common formats
+            if 'T' in date_value:  # ISO format with T
+                date_obj = datetime.fromisoformat(date_value.replace('Z', '+00:00'))
+            elif ' ' in date_value:  # Format like "2025-07-08 12:35:50"
+                date_obj = datetime.strptime(date_value, '%Y-%m-%d %H:%M:%S')
+            else:  # Just date like "2025-07-08"
+                date_obj = datetime.strptime(date_value, '%Y-%m-%d')
+            return date_obj.strftime(format_string)
+        except (ValueError, AttributeError):
+            # If parsing fails, return the original string
+            return str(date_value)
+    
+    # If it's a datetime object, format it directly
+    try:
+        return date_value.strftime(format_string)
+    except AttributeError:
+        return str(date_value)
+
 @app.route('/')
 def index():
     """Main dashboard showing header/detail summary"""
@@ -254,37 +283,36 @@ def api_document(header_id):
             'error': str(e)
         }), 500
 
-@app.route('/reports')
+@app.route('/reports', methods=['GET', 'POST'])
 def reports():
-    """Reports page showing analytics"""
+    """Reports page with date filtering and comparison data"""
     try:
-        summary = db_service.get_all_headers_summary()
+        selected_date = None
+        report_data = []
         
-        # Vendor analysis
-        vendor_stats = {}
-        for doc in summary:
-            vendor = doc['vendor_name'] or 'Unknown'
-            if vendor not in vendor_stats:
-                vendor_stats[vendor] = {
-                    'document_count': 0,
-                    'total_value': 0,
-                    'line_item_count': 0
-                }
-            vendor_stats[vendor]['document_count'] += 1
-            vendor_stats[vendor]['total_value'] += doc['total_amount'] or 0
-            vendor_stats[vendor]['line_item_count'] += doc['line_item_count'] or 0
+        if request.method == 'POST':
+            # Handle date filter form submission
+            upload_date = request.form.get('upload_date')
+            if upload_date:
+                selected_date = upload_date
+                # Get headers by date with full comparison data
+                report_data = db_service.get_headers_by_date_with_comparison(upload_date)
+                
+                if report_data:
+                    flash(f'Found {len(report_data)} PDF(s) uploaded on {selected_date}', 'success')
+                else:
+                    flash(f'No PDFs found for date {selected_date}', 'info')
+            else:
+                flash('Please select a valid date', 'warning')
         
-        # Sort vendors by total value
-        top_vendors = sorted(vendor_stats.items(), key=lambda x: x[1]['total_value'], reverse=True)[:10]
-        
-        return render_template('reports_header_detail.html', 
-                             summary=summary,
-                             vendor_stats=top_vendors)
+        return render_template('reports.html', 
+                             report_data=report_data,
+                             selected_date=selected_date)
                              
     except Exception as e:
         logger.error(f"Error loading reports: {e}")
         flash(f'Error loading reports: {str(e)}', 'error')
-        return render_template('reports_header_detail.html', summary=[], vendor_stats=[])
+        return render_template('reports.html', report_data=[], selected_date=None)
 
 @app.route('/compare')
 def compare():

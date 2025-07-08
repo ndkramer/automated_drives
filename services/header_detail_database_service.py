@@ -14,15 +14,8 @@ class HeaderDetailDatabaseService:
     """Database service for header/detail table structure"""
     
     def __init__(self):
-        self.server = os.getenv('DB_SERVER')
-        self.database = os.getenv('DB_DATABASE')
-        self.username = os.getenv('DB_USERNAME')
-        self.password = os.getenv('DB_PASSWORD')
-        
-        if not all([self.server, self.database, self.username, self.password]):
-            raise ValueError("Database connection parameters not fully configured in .env file")
-        
-        self.connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={self.server};DATABASE={self.database};UID={self.username};PWD={self.password}'
+        # Use SQLite for PDF header/detail storage
+        self.db_path = 'ETO_PDF.db'
         
         # Initialize comparison service
         try:
@@ -40,7 +33,8 @@ class HeaderDetailDatabaseService:
         
     def _get_connection(self):
         """Get database connection"""
-        return pyodbc.connect(self.connection_string)
+        import sqlite3
+        return sqlite3.connect(self.db_path)
     
     def _initialize_database(self):
         """Ensure header/detail tables exist"""
@@ -48,19 +42,68 @@ class HeaderDetailDatabaseService:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
-                # Check if new tables exist
+                # Create pdf_headers table
                 cursor.execute("""
-                    SELECT COUNT(*) FROM sysobjects 
-                    WHERE name IN ('pdf_headers', 'pdf_line_items') AND xtype='U'
+                    CREATE TABLE IF NOT EXISTS pdf_headers (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        filename TEXT NOT NULL,
+                        file_size INTEGER,
+                        page_count INTEGER,
+                        status TEXT DEFAULT 'pending',
+                        upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        raw_text TEXT,
+                        metadata TEXT,
+                        structured_data TEXT,
+                        ai_extracted_data TEXT,
+                        extraction_model TEXT,
+                        ai_extraction_success BOOLEAN DEFAULT 0,
+                        po_number TEXT,
+                        vendor_name TEXT,
+                        customer_name TEXT,
+                        invoice_number TEXT,
+                        invoice_date DATE,
+                        delivery_date DATE,
+                        payment_terms TEXT,
+                        currency TEXT,
+                        tax_rate DECIMAL(5,4),
+                        tax_amount DECIMAL(15,2),
+                        subtotal DECIMAL(15,2),
+                        total_amount DECIMAL(15,2),
+                        contact_email TEXT,
+                        contact_phone TEXT,
+                        shipping_address TEXT,
+                        billing_address TEXT
+                    )
                 """)
                 
-                table_count = cursor.fetchone()[0]
+                # Create pdf_line_items table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS pdf_line_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        pdf_header_id INTEGER NOT NULL,
+                        line_number INTEGER,
+                        item_code TEXT,
+                        description TEXT,
+                        quantity DECIMAL(15,4),
+                        unit_of_measure TEXT,
+                        unit_price DECIMAL(15,4),
+                        line_total DECIMAL(15,2),
+                        discount_percent DECIMAL(5,2),
+                        discount_amount DECIMAL(15,2),
+                        line_delivery_date DATE,
+                        drawing_number TEXT,
+                        revision TEXT,
+                        material TEXT,
+                        finish TEXT,
+                        extraction_confidence DECIMAL(3,2),
+                        extracted_from_text TEXT,
+                        delivery_date_inherited BOOLEAN DEFAULT 0,
+                        FOREIGN KEY (pdf_header_id) REFERENCES pdf_headers(id)
+                    )
+                """)
                 
-                if table_count < 2:
-                    logger.warning("Header/detail tables not found. Run header_detail_schema_upgrade.py first!")
-                    raise Exception("Header/detail database schema not initialized. Please run the schema upgrade script.")
-                else:
-                    logger.info("Header/detail database schema confirmed")
+                conn.commit()
+                logger.info("Header/detail database schema confirmed")
                     
         except Exception as e:
             logger.error(f"Error checking database schema: {e}")
@@ -139,8 +182,7 @@ class HeaderDetailDatabaseService:
                 ))
                 
                 # Get the header ID
-                cursor.execute("SELECT @@IDENTITY")
-                header_id = cursor.fetchone()[0]
+                header_id = cursor.lastrowid
                 
                 # Insert line items
                 line_item_count = 0
@@ -201,7 +243,7 @@ class HeaderDetailDatabaseService:
                 invoice_date, delivery_date, payment_terms, currency, tax_rate,
                 tax_amount, subtotal, total_amount, contact_email, contact_phone,
                 shipping_address, billing_address, extraction_model
-            ) OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             
             header_params = (
@@ -226,7 +268,7 @@ class HeaderDetailDatabaseService:
             )
             
             cursor.execute(header_query, header_params)
-            header_id = cursor.fetchone()[0]
+            header_id = cursor.lastrowid
             
             # Store line items
             line_items = extraction_result.get('line_items', [])
@@ -542,7 +584,211 @@ class HeaderDetailDatabaseService:
                 
         except Exception as e:
             logger.error(f"Error getting headers summary: {e}")
-            return [] 
+            return []
+
+    def get_headers_by_date_with_comparison(self, upload_date: str) -> List[Dict[str, Any]]:
+        """
+        Get all headers uploaded on a specific date with full comparison data
+        
+        Args:
+            upload_date: Date string in YYYY-MM-DD format
+            
+        Returns:
+            List of dictionaries containing header data, line items, and comparison results
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Query headers by date - handle timestamp format
+                cursor.execute("""
+                    SELECT * FROM pdf_headers 
+                    WHERE date(upload_date) = ? OR upload_date LIKE ?
+                    ORDER BY upload_date DESC
+                """, (upload_date, f"{upload_date}%"))
+                
+                headers = []
+                for row in cursor.fetchall():
+                    columns = [description[0] for description in cursor.description]
+                    header_data = dict(zip(columns, row))
+                    
+                    # Get line items for this header using a new cursor to avoid conflicts
+                    cursor2 = conn.cursor()
+                    cursor2.execute("""
+                        SELECT * FROM pdf_line_items 
+                        WHERE pdf_header_id = ?
+                        ORDER BY line_number
+                    """, (header_data['id'],))
+                    
+                    line_items = []
+                    for line_row in cursor2.fetchall():
+                        line_columns = [description[0] for description in cursor2.description]
+                        line_items.append(dict(zip(line_columns, line_row)))
+                    
+                    header_data['line_items'] = line_items
+                    
+                    # Get comparison data if available - use inline processing to avoid nested db calls
+                    if self.comparison_available and self.comparison_service and header_data.get('po_number') and line_items:
+                        try:
+                            po_number = header_data['po_number']
+                            logger.info(f"Getting comparison data for PO {po_number} with {len(line_items)} line items")
+                            
+                            # Get comparison results from ETOSandbox
+                            comparison_results = self.comparison_service.get_po_comparison_data(po_number, line_items)
+                            
+                            if comparison_results and comparison_results.get('success'):
+                                comparison_data = {
+                                    'comparison_available': True,
+                                    'comparison_results': comparison_results,
+                                    'comparison_summary': self._build_comparison_summary(comparison_results),
+                                    'po_found_in_eto': comparison_results.get('po_found', False)
+                                }
+                                logger.info(f"Comparison completed for PO {po_number}")
+                            else:
+                                comparison_data = {
+                                    'comparison_available': True,
+                                    'comparison_results': None,
+                                    'comparison_summary': None,
+                                    'po_found_in_eto': False,
+                                    'comparison_error': comparison_results.get('error') if comparison_results else 'No results'
+                                }
+                                logger.warning(f"Comparison failed for PO {po_number}: {comparison_results.get('error') if comparison_results else 'No results'}")
+                            
+                            header_data['comparison'] = comparison_data
+                            
+                        except Exception as comp_error:
+                            logger.error(f"Comparison error for header {header_data['id']}: {comp_error}")
+                            header_data['comparison'] = {
+                                'comparison_available': False,
+                                'comparison_error': str(comp_error),
+                                'comparison_results': None,
+                                'comparison_summary': None,
+                                'po_found_in_eto': False
+                            }
+                    else:
+                        header_data['comparison'] = None
+                        if not header_data.get('po_number'):
+                            logger.info(f"Skipping comparison for header {header_data['id']} - no PO number")
+                        elif not line_items:
+                            logger.info(f"Skipping comparison for header {header_data['id']} - no line items")
+                    
+                    headers.append(header_data)
+                
+                logger.info(f"Found {len(headers)} PDFs uploaded on {upload_date}")
+                return headers
+                
+        except Exception as e:
+            logger.error(f"Error getting headers by date: {e}")
+            return []
+    
+    def _get_full_comparison_data(self, header_id: int) -> Dict[str, Any]:
+        """
+        Get full comparison data for a specific header
+        
+        Args:
+            header_id: PDF header ID
+            
+        Returns:
+            Dictionary containing comparison results
+        """
+        try:
+            # Get the header data to extract PO number and line items
+            document = self.get_header_with_line_items(header_id)
+            if not document or not document.get('po_number'):
+                return None
+            
+            po_number = document['po_number']
+            pdf_line_items = document.get('line_items', [])
+            
+            if not pdf_line_items:
+                return None
+            
+            # Get comparison using the comparison service
+            if not self.comparison_service:
+                return None
+            
+            comparison_result = self.comparison_service.get_po_comparison_data(po_number, pdf_line_items)
+            
+            if comparison_result and comparison_result.get('success'):
+                return {
+                    'comparison_available': True,
+                    'comparison_results': comparison_result,
+                    'comparison_summary': self._build_comparison_summary(comparison_result),
+                    'po_found_in_eto': comparison_result.get('po_found', False)
+                }
+            else:
+                return {
+                    'comparison_available': False,
+                    'comparison_results': None,
+                    'comparison_summary': None,
+                    'po_found_in_eto': False
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting comparison data for header {header_id}: {e}")
+            return None 
+
+    def _build_comparison_summary(self, comparison_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Build a comparison summary from comparison results
+        
+        Args:
+            comparison_result: Dictionary containing comparison data
+            
+        Returns:
+            Dictionary containing summary statistics
+        """
+        try:
+            if not comparison_result or not comparison_result.get('comparisons'):
+                return {
+                    'total_lines': 0,
+                    'perfect_matches': 0,
+                    'partial_matches': 0,
+                    'no_matches': 0,
+                    'overall_score': 0.0,
+                    'accuracy_percentage': 0.0
+                }
+            
+            comparisons = comparison_result['comparisons']
+            total_lines = len(comparisons)
+            perfect_matches = 0
+            partial_matches = 0
+            no_matches = 0
+            total_score = 0.0
+            
+            for comparison in comparisons:
+                match_score = comparison.get('match_score', 0.0)
+                total_score += match_score
+                
+                if match_score >= 1.0:
+                    perfect_matches += 1
+                elif match_score > 0.0:
+                    partial_matches += 1
+                else:
+                    no_matches += 1
+            
+            overall_score = total_score / total_lines if total_lines > 0 else 0.0
+            accuracy_percentage = (perfect_matches / total_lines * 100) if total_lines > 0 else 0.0
+            
+            return {
+                'total_lines': total_lines,
+                'perfect_matches': perfect_matches,
+                'partial_matches': partial_matches,
+                'no_matches': no_matches,
+                'overall_score': overall_score,
+                'accuracy_percentage': accuracy_percentage
+            }
+            
+        except Exception as e:
+            logger.error(f"Error building comparison summary: {e}")
+            return {
+                'total_lines': 0,
+                'perfect_matches': 0,
+                'partial_matches': 0,
+                'no_matches': 0,
+                'overall_score': 0.0,
+                'accuracy_percentage': 0.0
+            }
 
     def _safe_decimal(self, value):
         """Safely convert value to decimal, return None if invalid"""

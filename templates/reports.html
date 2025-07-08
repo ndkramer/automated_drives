@@ -3,45 +3,522 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reports - PDF-to-Database Comparison Tool</title>
+    <title>Reports - PDF Header/Detail System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .stats-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .value-highlight {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        .report-line {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            background: white;
+        }
+        .pdf-row {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }
+        .eto-row {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+        }
+        .difference-highlight {
+            color: #dc3545 !important;
+            font-weight: bold;
+            background-color: #ffebee;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .match-button {
+            border-radius: 15px;
+            padding: 4px 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border: 2px solid;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .match-button.red {
+            color: #dc3545;
+            border-color: #dc3545;
+            background: transparent;
+        }
+        .match-button.red:hover {
+            background-color: #dc3545;
+            color: white;
+        }
+        .match-button.green {
+            color: #198754;
+            border-color: #198754;
+            background: transparent;
+        }
+        .match-button.green:hover {
+            background-color: #198754;
+            color: white;
+        }
+        .source-label {
+            font-size: 0.7rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+    </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">PDF-DB Comparison</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="{{ url_for('upload_pdf') }}">Upload PDF</a>
-                <a class="nav-link" href="{{ url_for('compare') }}">Compare</a>
-                <a class="nav-link active" href="{{ url_for('reports') }}">Reports</a>
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="fas fa-file-pdf"></i> PDF Header/Detail System
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{{ url_for('upload_pdf') }}">
+                    <i class="fas fa-upload"></i> Upload PDF
+                </a>
+                <a class="nav-link active" href="{{ url_for('reports') }}">
+                    <i class="fas fa-chart-line"></i> Reports
+                </a>
+                <a class="nav-link" href="{{ url_for('compare') }}">
+                    <i class="fas fa-balance-scale"></i> Compare
+                </a>
             </div>
         </div>
     </nav>
 
-    <div class="container mt-5">
+    <div class="container mt-4">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
         <div class="row">
-            <div class="col-md-12">
-                <h1 class="mb-4">Analysis Reports</h1>
-                <p class="lead">View detailed reports and analysis of comparison results</p>
+            <div class="col-12 mb-4">
+                <h1><i class="fas fa-chart-line"></i> PDF Reports</h1>
+                <p class="lead">View detailed reports of uploaded PDFs with comparison analysis</p>
                 
-                <div class="alert alert-info" role="alert">
-                    <h4 class="alert-heading">Reports Dashboard</h4>
-                    <p>The reporting functionality will provide:</p>
-                    <ul>
-                        <li>Summary of all uploaded PDFs and their processing status</li>
-                        <li>Detailed comparison results with match/mismatch statistics</li>
-                        <li>Data quality analysis and validation reports</li>
-                        <li>Export capabilities (PDF, Excel, CSV)</li>
-                        <li>Historical trend analysis</li>
-                    </ul>
-                    <p class="mb-0">This feature is currently under development.</p>
+                <!-- Date Filter Section -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-calendar-alt"></i> Filter by Upload Date</h5>
+                    </div>
+                    <div class="card-body">
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#dateFilterModal">
+                            <i class="fas fa-search"></i> Select Date Range
+                        </button>
+                        {% if selected_date %}
+                        <span class="ms-3 badge bg-info">
+                            Showing PDFs uploaded on: {{ selected_date }}
+                            <a href="{{ url_for('reports') }}" class="text-white ms-2" title="Clear filter">
+                                <i class="fas fa-times"></i>
+                            </a>
+                        </span>
+                        {% endif %}
+                    </div>
                 </div>
-                
-                <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+            </div>
+        </div>
+
+        <!-- Report Results -->
+        {% if report_data %}
+        <!-- Summary Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stats-card text-center">
+                    <h3>{{ report_data|length }}</h3>
+                    <p>PDFs Found</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card text-center">
+                    <h3>${{ "%.2f"|format(report_data|map(attribute='total_amount')|select|sum) }}</h3>
+                    <p>Total Value</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card text-center">
+                    <h3>{{ report_data|map(attribute='line_items')|map('length')|sum }}</h3>
+                    <p>Total Line Items</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card text-center">
+                    <h3>---%</h3>
+                    <p>Avg Match Rate</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Report Lines -->
+        {% for pdf_doc in report_data %}
+        <div class="report-line">
+            <!-- PDF Header Info -->
+            <div class="card-header bg-light">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h6 class="mb-1">
+                            <i class="fas fa-file-pdf text-danger"></i> 
+                            <strong>{{ pdf_doc.filename }}</strong>
+                        </h6>
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <small><strong>PO Number:</strong> {{ pdf_doc.po_number or 'N/A' }}</small><br>
+                                <small><strong>Invoice #:</strong> {{ pdf_doc.invoice_number or 'N/A' }}</small>
+                            </div>
+                            <div class="col-sm-6">
+                                <small><strong>Invoice Date:</strong> {{ pdf_doc.invoice_date|safe_strftime('%Y-%m-%d') if pdf_doc.invoice_date else 'N/A' }}</small><br>
+                                <small><strong>Delivery Date:</strong> {{ pdf_doc.delivery_date|safe_strftime('%Y-%m-%d') if pdf_doc.delivery_date else 'N/A' }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <div class="value-highlight">${{ "%.2f"|format(pdf_doc.total_amount or 0) }}</div>
+                        <small>Total Amount</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Line Items Comparison -->
+            <div class="card-body p-0">
+                {% if pdf_doc.comparison and pdf_doc.comparison.comparison_results and pdf_doc.comparison.comparison_results.comparisons %}
+                    <!-- Comparison Mode: Show PDF and ETOSandbox rows alternating -->
+                    {% for comparison in pdf_doc.comparison.comparison_results.comparisons %}
+                        {% set pdf_item = comparison.pdf_line %}
+                        {% set eto_item = comparison.eto_line %}
+                        {% set differences = comparison.differences %}
+                        
+                        {% if pdf_item %}
+                        <!-- PDF Row -->
+                        <div class="card mb-2 pdf-row">
+                            <div class="card-body py-3">
+                                <div class="row align-items-center">
+                                    <div class="col-md-1">
+                                        <div class="text-center">
+                                            <span class="badge bg-primary">PDF</span>
+                                            <div class="source-label text-primary">PDF</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <strong>{{ pdf_item.item_code or 'N/A' }}</strong><br>
+                                        <small class="text-muted">Item Code</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        {{ pdf_item.description or 'No description' }}<br>
+                                        <small class="text-muted">Description</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <span class="{% if differences.get('quantity') %}difference-highlight{% endif %}">
+                                            {{ pdf_item.quantity or 'N/A' }}
+                                        </span><br>
+                                        <small class="text-muted">QTY</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <span class="{% if differences.get('unit_price') %}difference-highlight{% endif %}">
+                                            ${{ "%.2f"|format(pdf_item.unit_price or 0) }}
+                                        </span><br>
+                                        <small class="text-muted">Unit Price</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <span class="{% if differences.get('delivery_date') %}difference-highlight{% endif %}">
+                                            {{ pdf_item.line_delivery_date|safe_strftime('%m/%d/%Y') if pdf_item.line_delivery_date else 'N/A' }}
+                                        </span><br>
+                                        <small class="text-muted">Delivery</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        ${{ "%.2f"|format(pdf_item.line_total or 0) }}<br>
+                                        <small class="text-muted">Line Total</small>
+                                    </div>
+                                    <div class="col-md-2 text-end">
+                                        {% if eto_item %}
+                                            <!-- AI Matching Information -->
+                                            {% if comparison.ai_confidence %}
+                                            <div class="mb-1">
+                                                <small class="text-muted">
+                                                    <i class="fas fa-robot"></i> AI: 
+                                                    {% if comparison.ai_confidence == 'PERFECT' %}
+                                                        <span class="badge bg-success">{{ comparison.ai_confidence }}</span>
+                                                    {% elif comparison.ai_confidence == 'GOOD' %}
+                                                        <span class="badge bg-primary">{{ comparison.ai_confidence }}</span>
+                                                    {% elif comparison.ai_confidence == 'FAIR' %}
+                                                        <span class="badge bg-warning">{{ comparison.ai_confidence }}</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary">{{ comparison.ai_confidence }}</span>
+                                                    {% endif %}
+                                                </small>
+                                            </div>
+                                            {% endif %}
+                                            
+                                            {% set match_score = comparison.match_score or 0 %}
+                                            {% if match_score >= 1.0 %}
+                                                <button class="match-button green" onclick="openUpdateModal({{ eto_item.detail_id }}, {{ pdf_item.quantity or 0 }}, {{ pdf_item.unit_price or 0 }}, '{{ pdf_item.line_delivery_date|safe_strftime('%Y-%m-%d') if pdf_item.line_delivery_date else '' }}')">
+                                                    <i class="fas fa-check-circle"></i> Perfect Match
+                                                </button>
+                                            {% else %}
+                                                <button class="match-button red" onclick="openUpdateModal({{ eto_item.detail_id }}, {{ pdf_item.quantity or 0 }}, {{ pdf_item.unit_price or 0 }}, '{{ pdf_item.line_delivery_date|safe_strftime('%Y-%m-%d') if pdf_item.line_delivery_date else '' }}')">
+                                                    <i class="fas fa-edit"></i> {{ "%.0f"|format((match_score * 100)|round|int) }}% Match
+                                                </button>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="badge bg-warning">No ETO Match</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if eto_item %}
+                        <!-- ETO Row -->
+                        <div class="card mb-2 eto-row">
+                            <div class="card-body py-3">
+                                <div class="row align-items-center">
+                                    <div class="col-md-1">
+                                        <div class="text-center">
+                                            <span class="badge bg-warning">ETO</span>
+                                            <div class="source-label text-warning">ETO</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <strong>{{ eto_item.item_id or 'N/A' }}</strong><br>
+                                        <small class="text-muted">Item Code</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        {{ eto_item.description or 'No description' }}<br>
+                                        <small class="text-muted">Description</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <span class="{% if differences.get('quantity') %}difference-highlight{% endif %}">
+                                            {{ eto_item.quantity or 'N/A' }}
+                                        </span><br>
+                                        <small class="text-muted">QTY</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <span class="{% if differences.get('unit_price') %}difference-highlight{% endif %}">
+                                            ${{ "%.2f"|format(eto_item.unit_price or 0) }}
+                                        </span><br>
+                                        <small class="text-muted">Unit Price</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <span class="{% if differences.get('delivery_date') %}difference-highlight{% endif %}">
+                                            {{ eto_item.date_required|safe_strftime('%m/%d/%Y') if eto_item.date_required else 'N/A' }}
+                                        </span><br>
+                                        <small class="text-muted">Delivery</small>
+                                    </div>
+                                    <div class="col-md-1">
+                                        ${{ "%.2f"|format(eto_item.line_total or 0) }}<br>
+                                        <small class="text-muted">Line Total</small>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <!-- Empty space to align with PDF row -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <!-- PDF Only Mode: No comparison data available -->
+                    {% for line_item in pdf_doc.line_items %}
+                    <div class="card mb-2 pdf-row">
+                        <div class="card-body py-3">
+                            <div class="row align-items-center">
+                                <div class="col-md-1">
+                                    <div class="text-center">
+                                        <span class="badge bg-primary">PDF</span>
+                                        <div class="source-label text-primary">PDF</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <strong>{{ line_item.item_code or 'N/A' }}</strong><br>
+                                    <small class="text-muted">Item Code</small>
+                                </div>
+                                <div class="col-md-3">
+                                    {{ line_item.description or 'No description' }}<br>
+                                    <small class="text-muted">Description</small>
+                                </div>
+                                <div class="col-md-1">
+                                    {{ line_item.quantity or 'N/A' }}<br>
+                                    <small class="text-muted">QTY</small>
+                                </div>
+                                <div class="col-md-1">
+                                    ${{ "%.2f"|format(line_item.unit_price or 0) }}<br>
+                                    <small class="text-muted">Unit Price</small>
+                                </div>
+                                <div class="col-md-1">
+                                    {{ line_item.line_delivery_date|safe_strftime('%m/%d/%Y') if line_item.line_delivery_date else 'N/A' }}<br>
+                                    <small class="text-muted">Delivery</small>
+                                </div>
+                                <div class="col-md-1">
+                                    ${{ "%.2f"|format(line_item.line_total or 0) }}<br>
+                                    <small class="text-muted">Line Total</small>
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    <span class="badge bg-secondary">No ETO Data</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        {% elif selected_date %}
+        <!-- No results for selected date -->
+        <div class="alert alert-info text-center">
+            <h5><i class="fas fa-info-circle"></i> No PDFs found</h5>
+            <p>No PDFs were uploaded on {{ selected_date }}. Try selecting a different date.</p>
+        </div>
+        {% else %}
+        <!-- Initial state - no date selected -->
+        <div class="alert alert-primary text-center">
+            <h5><i class="fas fa-calendar-alt"></i> Select a Date to View Reports</h5>
+            <p>Choose an upload date using the filter above to view PDF reports and comparison data.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Date Filter Modal -->
+    <div class="modal fade" id="dateFilterModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-calendar-alt"></i> Select Upload Date
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="{{ url_for('reports') }}">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="upload_date" class="form-label">Upload Date</label>
+                            <input type="date" class="form-control" id="upload_date" name="upload_date" required>
+                            <div class="form-text">Select the date when PDFs were uploaded to view reports.</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search"></i> Generate Report
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update ETO Modal -->
+    <div class="modal fade" id="updateEtoModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-edit"></i> Update ETO Line Item
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="updateEtoForm">
+                    <div class="modal-body">
+                        <input type="hidden" id="eto_detail_id" name="eto_detail_id">
+                        
+                        <div class="mb-3">
+                            <label for="update_quantity" class="form-label">Quantity</label>
+                            <input type="number" step="0.001" class="form-control" id="update_quantity" name="quantity" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="update_unit_price" class="form-label">Unit Price ($)</label>
+                            <input type="number" step="0.01" class="form-control" id="update_unit_price" name="unit_price" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="update_delivery_date" class="form-label">Delivery Date</label>
+                            <input type="date" class="form-control" id="update_delivery_date" name="delivery_date" required>
+                        </div>
+                        
+                        <div id="update_error_message" class="alert alert-danger" style="display: none;"></div>
+                        <div id="update_success_message" class="alert alert-success" style="display: none;"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Update ETO
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function openUpdateModal(detailId, quantity, unitPrice, deliveryDate) {
+            document.getElementById('eto_detail_id').value = detailId;
+            document.getElementById('update_quantity').value = quantity;
+            document.getElementById('update_unit_price').value = unitPrice;
+            document.getElementById('update_delivery_date').value = deliveryDate;
+            
+            // Clear previous messages
+            document.getElementById('update_error_message').style.display = 'none';
+            document.getElementById('update_success_message').style.display = 'none';
+            
+            // Show modal
+            new bootstrap.Modal(document.getElementById('updateEtoModal')).show();
+        }
+
+        // Handle Update ETO form submission
+        document.getElementById('updateEtoForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const submitButton = this.querySelector('button[type="submit"]');
+            
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+            
+            fetch('/update-eto', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('update_success_message').textContent = data.message;
+                    document.getElementById('update_success_message').style.display = 'block';
+                    
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+                } else {
+                    document.getElementById('update_error_message').textContent = data.error;
+                    document.getElementById('update_error_message').style.display = 'block';
+                }
+            })
+            .catch(error => {
+                document.getElementById('update_error_message').textContent = 'An error occurred: ' + error.message;
+                document.getElementById('update_error_message').style.display = 'block';
+            })
+            .finally(() => {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '<i class="fas fa-save"></i> Update ETO';
+            });
+        });
+    </script>
 </body>
 </html> 

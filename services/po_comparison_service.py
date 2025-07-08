@@ -28,6 +28,17 @@ class POComparisonService:
         
         if not all([self.business_server, self.business_database, self.business_username, self.business_password]):
             raise ValueError("Business database connection parameters not found in environment variables")
+        
+        # Initialize AI matcher for intelligent line item matching
+        try:
+            from .ai_line_item_matcher import AILineItemMatcher
+            self.ai_matcher = AILineItemMatcher()
+            self.ai_matching_available = True
+            logger.info("AI line item matching initialized")
+        except Exception as e:
+            logger.warning(f"AI line item matching not available: {e}")
+            self.ai_matcher = None
+            self.ai_matching_available = False
     
     def _get_business_connection(self):
         """Get connection to ETOSandbox database"""
@@ -142,43 +153,59 @@ class POComparisonService:
                         'unit_of_measure': 'each'  # Default since not in table
                     })
                 
-                # Perform position-based comparison (match by index, not line number)
-                comparisons = []
-                max_lines = max(len(pdf_line_items), len(eto_items_list))
-                
-                for i in range(max_lines):
-                    pdf_item = pdf_line_items[i] if i < len(pdf_line_items) else None
-                    eto_item = eto_items_list[i] if i < len(eto_items_list) else None
+                # Use AI-powered intelligent matching instead of position-based
+                if self.ai_matching_available and self.ai_matcher:
+                    logger.info(f"Using AI-powered intelligent matching for PO {po_number}")
+                    matching_result = self.ai_matcher.match_line_items(pdf_line_items, eto_items_list, po_number)
                     
-                    if pdf_item and eto_item:
-                        # Both items exist - compare them
-                        comparison = self._compare_line_items(pdf_item, eto_item)
-                        comparison['match_found'] = True
-                        comparison['comparison_type'] = 'both_present'
-                    elif pdf_item and not eto_item:
-                        # PDF item exists but no matching ETO item
-                        comparison = {
-                            'pdf_line': pdf_item,
-                            'eto_line': None,
-                            'match_found': False,
-                            'comparison_type': 'pdf_only',
-                            'differences': {
-                                'line_missing_in_eto': True
+                    if matching_result['success']:
+                        comparisons = []
+                        
+                        # Process AI-matched pairs
+                        for match in matching_result['matches']:
+                            pdf_item = match['pdf_item']
+                            eto_item = match['eto_item']
+                            comparison = self._compare_line_items(pdf_item, eto_item)
+                            comparison['match_found'] = True
+                            comparison['comparison_type'] = 'ai_matched'
+                            comparison['ai_confidence'] = match['confidence']
+                            comparison['match_reasons'] = match['match_reasons']
+                            comparison['ai_notes'] = match['notes']
+                            comparisons.append(comparison)
+                        
+                        # Process unmatched PDF items
+                        for pdf_item in matching_result['unmatched_pdf']:
+                            comparison = {
+                                'pdf_line': pdf_item,
+                                'eto_line': None,
+                                'match_found': False,
+                                'comparison_type': 'pdf_only',
+                                'differences': {
+                                    'line_missing_in_eto': True
+                                }
                             }
-                        }
-                    elif eto_item and not pdf_item:
-                        # ETO item exists but no matching PDF item
-                        comparison = {
-                            'pdf_line': None,
-                            'eto_line': eto_item,
-                            'match_found': False,
-                            'comparison_type': 'eto_only',
-                            'differences': {
-                                'line_missing_in_pdf': True
+                            comparisons.append(comparison)
+                        
+                        # Process unmatched ETO items
+                        for eto_item in matching_result['unmatched_eto']:
+                            comparison = {
+                                'pdf_line': None,
+                                'eto_line': eto_item,
+                                'match_found': False,
+                                'comparison_type': 'eto_only',
+                                'differences': {
+                                    'line_missing_in_pdf': True
+                                }
                             }
-                        }
-                    
-                    comparisons.append(comparison)
+                            comparisons.append(comparison)
+                        
+                        logger.info(f"AI matching completed: {matching_result['total_matches']} matches, method: {matching_result['match_method']}")
+                    else:
+                        logger.warning(f"AI matching failed, using fallback position-based matching")
+                        comparisons = self._fallback_position_matching(pdf_line_items, eto_items_list)
+                else:
+                    logger.info("AI matching not available, using position-based matching")
+                    comparisons = self._fallback_position_matching(pdf_line_items, eto_items_list)
                 
                 return {
                     'success': True,
@@ -308,6 +335,47 @@ class POComparisonService:
             pass
         
         return str(date_value)
+    
+    def _fallback_position_matching(self, pdf_line_items: List[Dict[str, Any]], eto_items_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Fallback position-based matching when AI matching is not available"""
+        comparisons = []
+        max_lines = max(len(pdf_line_items), len(eto_items_list))
+        
+        for i in range(max_lines):
+            pdf_item = pdf_line_items[i] if i < len(pdf_line_items) else None
+            eto_item = eto_items_list[i] if i < len(eto_items_list) else None
+            
+            if pdf_item and eto_item:
+                # Both items exist - compare them
+                comparison = self._compare_line_items(pdf_item, eto_item)
+                comparison['match_found'] = True
+                comparison['comparison_type'] = 'position_based'
+            elif pdf_item and not eto_item:
+                # PDF item exists but no matching ETO item
+                comparison = {
+                    'pdf_line': pdf_item,
+                    'eto_line': None,
+                    'match_found': False,
+                    'comparison_type': 'pdf_only',
+                    'differences': {
+                        'line_missing_in_eto': True
+                    }
+                }
+            elif eto_item and not pdf_item:
+                # ETO item exists but no matching PDF item
+                comparison = {
+                    'pdf_line': None,
+                    'eto_line': eto_item,
+                    'match_found': False,
+                    'comparison_type': 'eto_only',
+                    'differences': {
+                        'line_missing_in_pdf': True
+                    }
+                }
+            
+            comparisons.append(comparison)
+        
+        return comparisons
     
     def _calculate_match_score(self, differences: Dict[str, Any]) -> float:
         """

@@ -125,7 +125,7 @@
                         <strong>Customer:</strong> {{ document.customer_name or 'Unknown' }}
                     </p>
                     <p class="mb-0">
-                        <strong>Upload Date:</strong> {{ document.upload_date.strftime('%Y-%m-%d %H:%M') if document.upload_date else 'Unknown' }}
+                        <strong>Upload Date:</strong> {{ document.upload_date|safe_strftime('%Y-%m-%d %H:%M') if document.upload_date else 'Unknown' }}
                     </p>
                 </div>
                 <div class="col-md-4 text-md-end">
@@ -350,6 +350,27 @@
                                                     <div class="mt-2">
                                                         <strong>Line Total: ${{ "%.2f"|format(pdf_item.line_total or 0) }}</strong>
                                                         {% if eto_item %}
+                                                            <!-- AI Matching Information -->
+                                                            {% if comparison.ai_confidence %}
+                                                            <div class="mt-1">
+                                                                <small class="text-muted">
+                                                                    <i class="fas fa-robot"></i> AI Match: 
+                                                                    {% if comparison.ai_confidence == 'PERFECT' %}
+                                                                        <span class="badge bg-success">{{ comparison.ai_confidence }}</span>
+                                                                    {% elif comparison.ai_confidence == 'GOOD' %}
+                                                                        <span class="badge bg-primary">{{ comparison.ai_confidence }}</span>
+                                                                    {% elif comparison.ai_confidence == 'FAIR' %}
+                                                                        <span class="badge bg-warning">{{ comparison.ai_confidence }}</span>
+                                                                    {% else %}
+                                                                        <span class="badge bg-secondary">{{ comparison.ai_confidence }}</span>
+                                                                    {% endif %}
+                                                                    {% if comparison.match_reasons %}
+                                                                        | {{ comparison.match_reasons|join(', ') }}
+                                                                    {% endif %}
+                                                                </small>
+                                                            </div>
+                                                            {% endif %}
+                                                            
                                                             {% if comparison.has_differences %}
                                                                 <button class="btn btn-sm ms-2" 
                                                                         style="color: #dc3545; border-color: #dc3545; background-color: transparent;"
@@ -411,7 +432,7 @@
                                                         </div>
                                                         <div class="col-5">
                                                             <strong>Delivery:</strong><br>
-                                                            {{ eto_item.date_required.strftime('%Y-%m-%d') if eto_item.date_required else 'N/A' }}
+                                                            {{ eto_item.date_required|safe_strftime('%Y-%m-%d') if eto_item.date_required else 'N/A' }}
                                                         </div>
                                                     </div>
                                                     <div class="mt-2">
